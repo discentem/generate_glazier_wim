@@ -6,8 +6,9 @@ function LogOutput {
     Param(
         [Parameter(Mandatory=$True)][string]$message
     )
+    $output = $message
 
-    Write-Output $message
+    Write-Output $output
 }
 
 
@@ -19,9 +20,9 @@ function EnsureFile {
 
     if(-Not (Test-Path ($full_destination_path))) {
         Copy-Item $file_path -Destination $full_destination_path
-        [string]$output = "Copying $file_path to $full_destination_path"
+        LogOutput -message "Copying $file_path to $full_destination_path"
     } else {
-        [string]$output = "$file_path already exists at $full_destination_path. Skipping..."
+        LogOutput -message "$file_path already exists at $full_destination_path. Skipping..."
     }
     return $output
 }
@@ -33,18 +34,18 @@ function EnsureWimMount {
         [bool]$discard = $False
     )
     if ($discard) {
-        $message = '$discart=$True: Dismounting and remounting...'
+        LogOutput -message '$discart=$True: Dismounting and remounting...'
         Dismount-WindowsImage -Path $wim_mount -Discard
         Mount-WindowsImage -ImagePath $boot_wim -Index 1 -Path $wim_mount
 
     } else {
         if(Test-Path $wim_mount) {
-            $message = "Skipping, WIM already mounted to $wim_mount"
+            LogOutput -message "Skipping, WIM already mounted to $wim_mount"
         } else {
+            LogOutput -message "Mounting $boot_wim to $wim_mount..."
             Mount-WindowsImage -ImagePath $boot_wim -Index 1 -Path $wim_mount
         }
     }
-    return $message
 }
 
 
@@ -62,11 +63,9 @@ function main {
         $boot_wim = ($winpe_base_path + '\media\sources\boot.wim')
         $wim_mount = ($winpe_base_path + '\mount')
         
-        $wim_mount_msg = (EnsureWimMount -boot_wim $boot_wim -wim_mount $wim_mount -discard $discard)
-        LogOutput -message $wim_mount_msg 
+        EnsureWimMount -boot_wim $boot_wim -wim_mount $wim_mount -discard $discard
         $shutdown_exe_destination = ($wim_mount + "\Windows\System32\shutdown.exe")
-        $ensure_file_msg = (EnsureFile -file_path "C:\Windows\System32\shutdown.exe" -full_destination_path $shutdown_exe_destination)
-        LogOutput -message $ensure_file_msg
+        EnsureFile -file_path "C:\Windows\System32\shutdown.exe" -full_destination_path $shutdown_exe_destination
 
     }
 
