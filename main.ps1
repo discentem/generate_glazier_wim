@@ -1,5 +1,6 @@
 Param(
-    [Parameter(Mandatory=$False)] [bool]$discard = $False
+    [Parameter(Mandatory=$False)] [bool]$discard = $False,
+    [Parameter()][string]$global_scratch_dir = "C:\Windows\Temp\generate_glazier_wim_scratch"
 )
 
 function LogOutput {
@@ -32,10 +33,9 @@ function MountWim {
     if($freshMount) {
         Mount-WindowsImage -ImagePath $boot_wim -Index 1 -Path $wim_mount
     }
-   # Mount-WindowsImage -ImagePath $boot_wim -Index 1 -Path $wim_mount
 }
 
-function EnsureDirectory {
+function EnsureNewDirectory {
     Param(
         [Parameter(Mandatory=$True)][string]$folder_path
     )
@@ -113,6 +113,21 @@ function AddDismPackages {
     }
 }
 
+function CloneGithubRepo {
+    Param(
+        [Parameter(Mandatory=$True)][string]$repo,
+        [Parameter()][string]$scratch_dir=$global_scratch_dir,
+        [Parameter()][string]$destination_in_scratch="glazier_repo"
+    )
+    if(-Not (Test-Path $scratch_dir)) {
+        New-Item -Path $scratch_dir -ItemType "directory"
+    }
+
+    git clone $repo "$scratch_dir\$destination_in_scratch"
+
+    return "$scratch_dir\$destination_in_scratch"
+}
+
 
 function main {
 
@@ -125,7 +140,16 @@ function main {
         MountWim -boot_wim $boot_wim -wim_mount $wim_mount -discard $discard
         $shutdown_exe_destination = ($wim_mount + "\Windows\System32\shutdown.exe")
         CopyFileIdempotently -file_path "C:\Windows\System32\shutdown.exe" -full_destination_path $shutdown_exe_destination
-
+        
+        #$WinPE_OCs = ""
+        if ($winpe_base_path -Match "x86") {
+            # Set-Variable -Name "WinPE_OCs" -Value "C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\x86\WinPE_OCs"
+            $WinPE_OCs = "C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\x86\WinPE_OCs"
+        } elseif ($winpe_base_path -Match "amd64") {
+            # Set-Variable -Name "WinPE_OCs" -Value "C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs"
+            $WinPE_OCs = "C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs"
+        }
+        # AddDismPackages expects base_path to NOT have a trailing slash. Packages are expect not to have a prefix slash either.
         [string[]] $cabPackages = @(
             "WinPE-WMI.cab",
             "en-us\WinPE-WMI_en-us.cab",
@@ -140,19 +164,14 @@ function main {
             "WinPE-DismCmdlets.cab",
             "en-us\WinPE-DismCmdlets_en-us.cab"
         )
-        
-        #$WinPE_OCs = ""
-        if ($winpe_base_path -Match "x86") {
-            # Set-Variable -Name "WinPE_OCs" -Value "C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\x86\WinPE_OCs"
-            $WinPE_OCs = "C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\x86\WinPE_OCs"
-        } elseif ($winpe_base_path -Match "amd64") {
-            # Set-Variable -Name "WinPE_OCs" -Value "C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs"
-            $WinPE_OCs = "C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs"
-        }
-        # base_path should not have a trailing slash. Packages should not have a prefix slash either.
         AddDismPackages -base_path $WinPE_OCs -wim_mount $wim_mount -packages $cabPackages
 
-        EnsureDirectory -folder_path ($winpe_base_path + "\src")
+        EnsureNewDirectory -folder_path ($wim_mount + "\src")
+        EnsureNewDirectory -folder_path ($wim_mount + "\src\glazier")
+        # DownloadFilesFromGithubRepo -Owner "google" -Repository "glazier" -Path "glazier" -DestinationPath "$winpe_base_path\src\"
+        $repo_destination = (CloneGithubRepo -repo 'https://github.com/google/glazier.git')
+        Copy-Item -Path "$repo_destination\glazier\*" -Destination "$wim_mount\src\glazier" -Recurse
+
     }
 }
 main
