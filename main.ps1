@@ -1,6 +1,6 @@
 Param(
     [Parameter(Mandatory=$False)] [bool]$discard = $False,
-    [Parameter()][string]$global_scratch_dir = "C:\Windows\Temp\generate_glazier_wim_scratch"
+    [Parameter()][string]$global_scratch_dir = "C:\Users\brandon\generate_glazier_wim_scratch"
 )
 
 function LogOutput {
@@ -128,6 +128,24 @@ function CloneGithubRepo {
     return "$scratch_dir\$destination_in_scratch"
 }
 
+function DownloadFileAndVerify {
+    Param(
+        [Parameter(Mandatory=$True)][string]$hash,
+        [Parameter(Mandatory=$True)][string]$url,
+        [Parameter(Mandatory=$True)][string]$destination
+    )
+    Invoke-WebRequest $py_url -OutFile "$destination"
+    $actual_hash = (Get-FileHash $destination -Algorithm MD5).Hash
+    if($hash -eq $actual_hash) {
+        LogOutput -message "Downloaded $url to $destination and hashes match..."
+    } else {
+        Remove-Item $destination
+        throw "Hashes don't match"
+    }
+
+    return $destination
+}
+
 
 function main {
 
@@ -171,7 +189,12 @@ function main {
         # DownloadFilesFromGithubRepo -Owner "google" -Repository "glazier" -Path "glazier" -DestinationPath "$winpe_base_path\src\"
         $repo_destination = (CloneGithubRepo -repo 'https://github.com/google/glazier.git')
         Copy-Item -Path "$repo_destination\glazier\*" -Destination "$wim_mount\src\glazier" -Recurse
-
+        EnsureNewDirectory -folder_path "$global_scratch_dir"
+        EnsureNewDirectory -folder_path "$global_scratch_dir\python_installer"
+        $py_url = "https://www.python.org/ftp/python/3.8.2/python-3.8.2-amd64.exe"
+        $py_exe = DownloadFileAndVerify -hash 'b5df1cbb2bc152cd70c3da9151cb510b' -url $py_url -destination "$global_scratch_dir\python_installer\python.exe"
+        EnsureNewDirectory -folder_path "$wim_mount\python"
+        ./$py_exe /quiet DefaultJustForMeTargetDir=$wim_mount\python
     }
 }
 main
